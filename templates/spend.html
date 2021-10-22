@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block main %}
+   <h1 style="margin: 10px;">Spend a password coin below:</h1>
+
+    <!-- Spend A Password Coin -->
+    <form method="post">
+      <div class="form-group" style="margin-top: 10px; margin-bottom: 10px;">
+          <label for="title">Password</label>
+          <input type="text" name="password"
+                placeholder="Coin Password" class="form-control" style="width: 100%; max-width: 250px; padding: 8px; border-radius: 5px; border-style: solid; border-width: 1px;"
+                value="{{ request.form['password'] }}"></input>
+      </div>
+
+      <div class="form-group" style="margin-top: 10px; margin-bottom: 10px;">
+          <label for="content">Address</label>
+          <input type="text" name="address"
+                placeholder="Wallet Receive Address to send Mojos to" class="form-control" style="width: 100%; max-width: 250px; padding: 8px; border-radius: 5px; border-style: solid; border-width: 1px;"
+                value="{{ request.form['address'] }}"></input>
+      </div>
+
+      <div class="form-group">
+        <button type="submit" class="btn btn-primary" style="text-decoration: none; width: 125px; border-radius: 5px; margin: 5px; padding: 10px; background-color: #37a17b; color: white; border-style: none">Submit</button>
+
+        <a href="{{ url_for('index') }}" style="font-size: 14px;text-decoration: none; width: 125px; border-radius: 5px; margin: 5px; padding: 10px; background-color: #a1a1a1; color: white;">
+          Back
+        </a>
+      </div>
+    </form>
+{% endblock %}

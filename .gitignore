@@ -3,3 +3,7 @@
 
 # Python venv
 /venv
+
+# Python module cache
+__pycache__
+.pytest_cache

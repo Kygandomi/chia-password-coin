@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block main %}
+  <h1 style="margin: 10px;">Welcome to the Chia Password Coin!</h1>
+
+  {% for wallet in wallets %}
+  <p>
+    Your wallet has a balance of:
+      <h4>{{ wallet }} TXCH</h4>
+  </p>
+
+  {% endfor %}
+
+  <p style="margin-bottom: 25px">Create or spend a password coin below</p>
+
+  <a href="{{ url_for('create') }}" style="font-size: 14px; text-decoration: none; width: 125px; border-radius: 5px; margin: 5px; padding: 10px; background-color: #62a7ce; color: white;">
+    Create Coin
+  </a>
+  
+  <a href="{{ url_for('spend') }}" style="font-size: 14px; text-decoration: none; width: 125px; border-radius: 5px; margin: 5px; padding: 10px; background-color: #ff7b00; color: white;">
+    Spend Coin
+  </a>
+{% endblock %}
