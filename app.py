@@ -1,5 +1,6 @@
 import hashlib
 
+# Related to coin signing
 from blspy import G2Element
 
 from chia.rpc.wallet_rpc_client import WalletRpcClient
@@ -17,16 +18,21 @@ from password.password_driver import (
     create_coin_treehash,
     create_coin_txaddress,
     solution_for_password,
+    create_coin_password_hash_from_string
 )
+import asyncio
 
 from quart import Quart, render_template, request, url_for, redirect
 
+# Instantiate the app
 app = Quart(__name__)
 
 # ========================================================
 # GLOBAL VARIABLES
 # ========================================================
-main_wallet = {}
+full_node_rpc_client = None
+wallet_rpc_client = None
+
 config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
 wallet_host = "localhost"
 wallet_rpc_port = config["wallet"]["rpc_port"]
@@ -37,39 +43,16 @@ node_rpc_port = config["full_node"]["rpc_port"]
 # ========================================================
 
 
-async def get_rpc_node():
-    return await FullNodeRpcClient.create(wallet_host, node_rpc_port, DEFAULT_ROOT_PATH, config)
+async def setup_blockchain_connection():
+    global full_node_rpc_client, wallet_rpc_client
 
-# Helper method for getting Wallet RPC client
+    # Should not create new connection if already connected
+    if full_node_rpc_client is not None and wallet_rpc_client is not None:
+        return
 
-
-async def get_rpc_client():
-    return await WalletRpcClient.create(wallet_host, wallet_rpc_port, DEFAULT_ROOT_PATH, config)
-
-# Helper method for requesting vallue
-
-
-async def get_wallet():
-
-    # Get the RPC Client
-    client = await get_rpc_client()
-
-    # We're just going to use the first wallet which seems to always be the one currently open in the chia gui
-    wallets = await client.get_wallets()
-
-    balance = await client.get_wallet_balance(wallets[0]["id"])
-
-    my_wallet = {}
-    my_wallet['client'] = client
-    my_wallet['wallet'] = wallets[0]
-    my_wallet['id'] = wallets[0]['id']
-    my_wallet['name'] = wallets[0]['name']
-    my_wallet['balance'] = balance['confirmed_wallet_balance']
-
-    # Close the client
-    client.close()
-
-    return my_wallet
+    # Setup the RPC connections
+    full_node_rpc_client = await FullNodeRpcClient.create(wallet_host, node_rpc_port, DEFAULT_ROOT_PATH, config)
+    wallet_rpc_client = await WalletRpcClient.create(wallet_host, wallet_rpc_port, DEFAULT_ROOT_PATH, config)
 
 # ========================================================
 # QUART APPLICATION
@@ -78,18 +61,18 @@ async def get_wallet():
 
 @app.route('/')
 async def index():
-    global main_wallet
+    await setup_blockchain_connection()
 
-    # If we don't already have the wallet info
-    if len(main_wallet.keys()) == 0:
-        main_wallet = await get_wallet()
+    wallets = await wallet_rpc_client.get_wallets()
+    balance = await wallet_rpc_client.get_wallet_balance(wallets[0]["id"])
 
-    # return await render_template('index.html', wallets=[main_wallet['wallet']])
-    return await render_template('index.html', wallets=[main_wallet['balance'] / 1000000000000])
+    return await render_template('index.html', balances=[balance['confirmed_wallet_balance'] / 1000000000000])
 
 
 @app.route('/create', methods=('GET', 'POST'))
 async def create():
+    await setup_blockchain_connection()
+
     # If a post request was made
     if request.method == 'POST':
         # Get variables from the form
@@ -97,59 +80,54 @@ async def create():
         amount = (await request.form)['amount']
 
         # Get information for coin transaction
-        coin_txaddress = create_coin_txaddress(bytes.fromhex(
-            hashlib.sha256(password.encode()).hexdigest()))
+        coin_txaddress = create_coin_txaddress(
+            create_coin_password_hash_from_string(password))
 
-        # Get the RPC Client
-        client = await get_rpc_client()
+        # Get the ID of the wallet we will transact with
+        wallets = await wallet_rpc_client.get_wallets()
+        wallet_id = str(wallets[0]["id"])
 
         # Try to send the transaction to the network
-        tx = await client.send_transaction(str(main_wallet['id']), int(amount), coin_txaddress)
-
-        print("TX COMPLETED - COIN CREATED !")
-        print(tx.name)
-
-        # Close client
-        client.close()
+        tx = await wallet_rpc_client.send_transaction(wallet_id, int(amount), coin_txaddress)
 
         # Redirect back to the home page on success
         return redirect(url_for('index'))
 
-    # Show the create form template
+    # Show the create from template
+    # For GET method
     return await render_template('create.html')
 
 
 @app.route('/spend', methods=('GET', 'POST'))
 async def spend():
+    await setup_blockchain_connection()
+
     # If a post request was made
     if request.method == 'POST':
         # Get variables from the form
         password = (await request.form)['password']
         address = (await request.form)['address']
 
-        # Get the RPC Clients
-        client = await get_rpc_client()
-        node = await get_rpc_node()
-
         # Get Spend Bundle Parameters
-        coin_reveal = create_coin_puzzle(bytes.fromhex(
-            hashlib.sha256(password.encode()).hexdigest()))
-
-        coin_treehash = create_coin_treehash(bytes.fromhex(
-            hashlib.sha256(password.encode()).hexdigest()))
-        coin_records = await node.get_coin_records_by_puzzle_hash(coin_treehash)
+        coin_reveal = create_coin_puzzle(
+            create_coin_password_hash_from_string(password))
+        coin_treehash = create_coin_treehash(
+            create_coin_password_hash_from_string(password))
+        coin_records = await full_node_rpc_client.get_coin_records_by_puzzle_hash(coin_treehash)
 
         # Let's spend the first available coin with this password
+        # Note: Since all coins with the same password created with the puzzle in /password/password.clsp have the same
+        #       puzzle_hash they will all be retrieved here. Even the ones that were NOT created by you!
         coin_to_spend = None
         for coin_record in coin_records:
             if not coin_record.spent:
                 coin_to_spend = coin_record
+                break
 
         # If there's no coin redirect back to the spend template
         if coin_to_spend == None:
             print("NO COIN AVAILABLE")
-            node.close()
-            client.close()
+            # TODO: Show error on client
             return await render_template('spend.html')
 
         # Get the coin solution
@@ -170,18 +148,14 @@ async def spend():
         )
 
         # Try to send the spend bundle to the network
-        push_res = await node.push_tx(tx_spend_bundle)
-
-        print("TX COMPLETED - SPEND BUNDLE SUBMITTED")
-        print(tx_spend_bundle)
-        print(push_res)
-
-        # Close clients
-        node.close()
-        client.close()
+        await full_node_rpc_client.push_tx(tx_spend_bundle)
 
         # Redirect back to the home page on success
         return redirect(url_for('index'))
 
     # Show the spend form template
+    # If GET method
     return await render_template('spend.html')
+
+# This will run the app when this file is runned
+app.run()

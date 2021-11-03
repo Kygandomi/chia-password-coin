@@ -3,12 +3,11 @@
 {% block main %}
   <h1 style="margin: 10px;">Welcome to the Chia Password Coin!</h1>
 
-  {% for wallet in wallets %}
-  <p>
-    Your wallet has a balance of:
-      <h4>{{ wallet }} TXCH</h4>
-  </p>
-
+  {% for balance in balances %}
+    <p>
+      Your wallet has a balance of:
+        <h4>{{ balance }} TXCH</h4>
+    </p>
   {% endfor %}
 
   <p style="margin-bottom: 25px">Create or spend a password coin below</p>
